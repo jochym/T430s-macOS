@@ -1,0 +1,527 @@
+// 1. "patchmatic -extract" --> "DSDT.aml" --> "MaciASL/iasl61 -da -dl DSDT.aml" --> "DSDT.dsl"
+// 2. "DSDT.dsl" —-> [VID => IGPU] —-> "DSDT(IGPU).dsl"
+// 3. "DSDT.dsl(IGPU)" --> MaciASL/patches/this.txt --> "/EFI/Clover/ACPI/patched/DSDT.aml"
+// 4. "ssdtPRGen.sh -c 3 -lfm 900" --> "/EFI/Clover/ACPI/patched/SSDT.aml"
+// 5. "SSDT-PNLF.dsl" --> MaciASL --> "/EFI/Clover/ACPI/patched/SSDT-PNLF.aml"
+// 6. "sudo pmset -a hibernatemode 0 && rm /var/vm/sleepimage"
+
+// BEGIN PATCH //
+
+#Maintained by: RehabMan for: Laptop Patches
+#system_IMEI.txt
+
+# if you already have an IMEI/HECI/MEI device, you should not use this patch
+# but if you do, these patches will remove the existing one
+into device name_adr 0x00160000 remove_entry;
+into device label IMEI parent_label PCI0 remove_entry;
+
+# add missing IMEI device
+into device label PCI0 insert
+begin
+Device (IMEI)\n
+{\n
+    Name (_ADR, 0x00160000)\n
+}\n
+end;
+
+// BEGIN PATCH //
+
+# Maintained by: PJALM (help@pjalm.com) for: http://pjalm.com/repos/
+
+# These patches are the registered property of PJALM.COM and can not be
+# redistributed or modified without the written consent of PJALM.COM.
+# Links to these patches are allowed. All material is protected under the DMCA.
+
+# Last Updated  : 05/07/2016
+# Patch Name    : Basic Apple Device Renames
+# Patch Version : 1.0
+
+# Device Renames
+into_all all code_regex _T_([0-6]) replaceall_matched begin T_%1 end;
+
+into device label PIC set_label begin IPIC end;
+into device label DMAD set_label begin DMAC end;
+into device label TMR set_label begin TIMR end;
+into device label RTC0 set_label begin RTC end;
+into device label COPR set_label begin MATH end;
+into device label OMSC set_label begin LDRC end;
+into device label CHN0 set_label begin PRT0 end;
+into device label CHN1 set_label begin PRT1 end;
+into device label EUSB set_label begin EHCI end;
+into device label USBE set_label begin UHCI end;
+into device label USB0 set_label begin UHC1 end;
+into device label USB1 set_label begin UHC2 end;
+into device label USB2 set_label begin UHC3 end;
+into device label USB3 set_label begin UHC4 end;
+into device label USB4 set_label begin UHC5 end;
+into device label USB5 set_label begin UHC6 end;
+into device label USB6 set_label begin UHC7 end;
+into device label USB7 set_label begin UHC8 end;
+into device label AZAL set_label begin HDEF end;
+
+
+into_all all code_regex DMAD replaceall_matched begin DMAC end;
+into_all all code_regex TMR replaceall_matched begin TIMR end;
+into_all all code_regex RTC0 replaceall_matched begin RTC end;
+into_all all code_regex COPR replaceall_matched begin MATH end;
+into_all all code_regex OMSC replaceall_matched begin LDRC end;
+into_all all code_regex CHN0 replaceall_matched begin PRT0 end;
+into_all all code_regex CHN1 replaceall_matched begin PRT1 end;
+into_all all code_regex EUSB replaceall_matched begin EHCI end;
+into_all all code_regex USBE replaceall_matched begin UHCI end;
+into_all all code_regex USB0 replaceall_matched begin UHC1 end;
+into_all all code_regex USB1 replaceall_matched begin UHC2 end;
+into_all all code_regex USB2 replaceall_matched begin UHC3 end;
+into_all all code_regex USB3 replaceall_matched begin UHC4 end;
+into_all all code_regex USB4 replaceall_matched begin UHC5 end;
+into_all all code_regex USB5 replaceall_matched begin UHC6 end;
+into_all all code_regex USB6 replaceall_matched begin UHC7 end;
+into_all all code_regex USB7 replaceall_matched begin UHC8 end;
+into_all all code_regex AZAL replaceall_matched begin HDEF end;
+
+// BEGIN PATCH //
+
+#Maintained by: RehabMan for: Laptop Patches
+#system_WAK2.txt
+
+#
+# In 10.8.5 and perhaps later versions of OS X, DSDT method _WAK
+# called after resuming from S3 suspend (Sleep, or suspend to RAM),
+# is called with garbage in Arg0, where it should be a value 
+# representing the sleep state being left (1-5).
+#
+# This causes problems for code in DSDT _WAK method which expects
+# and checks against Arg0==3 for wake from sleep to turn on various
+# devices or restore internal state to a working state.
+#
+# This patch adds code at the very beginning of the method to
+# force an an out-of-range Arg0 to 3.
+#
+# See system_WAK1.txt for an alternate patch
+#
+# Note regarding Yosemite:
+#  At least in Yosemite 10.10.2, this bug appears to be fixed.
+#  I didn't notice/verify on other versions of Yosemite
+#
+
+into method label _WAK code_regex ([\s\S]*) replace_matched
+begin
+If (LOr(LLess(Arg0,1),LGreater(Arg0,5))) { Store(3,Arg0) }\n
+%1
+end;
+
+into method label \_WAK code_regex ([\s\S]*) replace_matched
+begin
+If (LOr(LLess(Arg0,1),LGreater(Arg0,5))) { Store(3,Arg0) }\n
+%1
+end;
+
+// BEGIN PATCH //
+
+# status LED wakeup fix, lid wakeup fix
+
+into method label \_WAK code_regex () replace_matched
+begin
+\\_SI._SST(0x01)\n
+\\_GPE._L1D()\n
+end;
+
+// BEGIN PATCH //
+
+#Maintained by: RehabMan for: Laptop Patches
+#system_Mutex.txt
+
+#
+# Some DSDTs use Mutex objects with non-zero a SyncLevel.  Evidently,
+# OS X has some difficulty with this part of the ACPI spec, either that 
+# or the DSDTs are, in fact, codec incorrectly and Windows is ignoring 
+# it.
+
+# The common result of a non-zero SyncLevel is failure of methods at the
+# point of Acquire on the mutext in question.  This can result in strange
+# behavior, failed battery status, or other issues.
+#
+# This patch corrects all Mutex objects declared with a non-zero
+# SyncLevel to use zero.
+#
+
+# 2x as there is some sort of MaciASL bug...
+# (code_regex_not seems broken)
+#into_all all code_regex_not Mutex\s+\([^,]*,\s+0x00\) code_regex Mutex\s+\(([^,]*),\s+[^)]*\) replaceall_matched begin Mutex(%1, 0) end;
+#into_all all code_regex_not Mutex\s+\([^,]*,\s+0x00\) code_regex Mutex\s+\(([^,]*),\s+[^)]*\) replaceall_matched begin Mutex(%1, 0) end;
+
+# 10x as workaround for MaciASL bug...
+into_all all code_regex Mutex\s+\(([^,]*),\s+[^)]*\) replaceall_matched begin Mutex(%1, 0) end;
+into_all all code_regex Mutex\s+\(([^,]*),\s+[^)]*\) replaceall_matched begin Mutex(%1, 0) end;
+into_all all code_regex Mutex\s+\(([^,]*),\s+[^)]*\) replaceall_matched begin Mutex(%1, 0) end;
+into_all all code_regex Mutex\s+\(([^,]*),\s+[^)]*\) replaceall_matched begin Mutex(%1, 0) end;
+into_all all code_regex Mutex\s+\(([^,]*),\s+[^)]*\) replaceall_matched begin Mutex(%1, 0) end;
+into_all all code_regex Mutex\s+\(([^,]*),\s+[^)]*\) replaceall_matched begin Mutex(%1, 0) end;
+into_all all code_regex Mutex\s+\(([^,]*),\s+[^)]*\) replaceall_matched begin Mutex(%1, 0) end;
+into_all all code_regex Mutex\s+\(([^,]*),\s+[^)]*\) replaceall_matched begin Mutex(%1, 0) end;
+into_all all code_regex Mutex\s+\(([^,]*),\s+[^)]*\) replaceall_matched begin Mutex(%1, 0) end;
+into_all all code_regex Mutex\s+\(([^,]*),\s+[^)]*\) replaceall_matched begin Mutex(%1, 0) end;
+
+// BEGIN PATCH //
+
+#Maintained by: RehabMan for: Laptop Patches
+#system_PNOT.txt
+
+# PNOT or PPNT are commonly called from EC/AC adapter related code
+# and often access identifiers that are present in SSDTs generally
+# dropped (CPU SSDTs)
+#
+# Because of this, it is best to make these methods do nothing.
+
+# make PNOT/PPNT/PNTF a no-op
+into method label PNOT replace_content begin // nothing end;
+into method label PPNT replace_content begin // nothing end;
+into method label PNTF replace_content begin // nothing end;
+
+// BEGIN PATCH //
+
+#Maintained by: RehabMan for: Laptop Patches
+#system_HPET.txt
+
+# If you have panic "No HPETs available..." or have a abrubt restart
+# after waking from sleep, you may need this patch.
+# The patch makes sure the HPET device is always available.
+
+# HPET fix to avoid AppleIntelCPUPowerManagement panic
+into method label _STA parent_hid PNP0103 remove_entry;
+into device name_hid PNP0103 code_regex Name\s\(_STA\,\s+0x0F\) remove_matched;
+into device name_hid PNP0103 insert
+begin
+Name (_STA, 0x0F)\n
+end;
+
+into method label _CRS parent_hid PNP0103 remove_entry;
+into device name_hid PNP0103 insert
+begin
+Method (_CRS, 0, NotSerialized)\n
+{\n
+    Return (BUF0)\n
+}\n
+end;
+
+// BEGIN PATCH //
+
+#Maintained by: RehabMan for: Laptop Patches
+#system_IRQ.txt
+
+# This can fix non-working audio and also has an affect on HPET.
+#
+# Use this if you have issues with patched AppleHDA (required on almost all laptops)
+# or if you have issues with HPET (restart after wake).
+
+# IRQ fix
+into device name_hid PNP0000 code_regex IRQNoFlags\s\(\)\n\s+\{(\d+)\} remove_matched;
+into device name_hid PNP0100 code_regex IRQNoFlags\s\(\)\n\s+\{(\d+)\} remove_matched;
+into device name_hid PNP0B00 code_regex IRQNoFlags\s\(\)\n\s+\{(\d+)\} remove_matched;
+into device name_hid PNP0103 code_regex IRQNoFlags\s\(\)\n\s+\{.*\} removeall_matched;
+into device name_hid PNP0103 code_regex Name\s\(([^,]+),\sResourceTemplate\s\(\).*\n\s+\{((?:.|\n)*)\}\) replace_matched
+begin
+Name (%1, ResourceTemplate()\n
+{\n
+    IRQNoFlags() { 0, 8, 11, 15 }\n
+%2
+})\n
+end;
+
+// BEGIN PATCH //
+
+#Maintained by: RehabMan for: Laptop Patches
+#system_OSYS_win8.txt
+
+# Cause the DSDT to simulate "Windows 2012" when running under "Darwin" (OS X).
+#
+# This can fix various DSDT related problems for code within the DSDT
+# that is conditional on the operating system version.
+#
+# Sometimes "Windows 2012" is a better choice than "Windows 2006"
+
+into_all method code_regex If\s+\([\\]?_OSI\s+\(\"Windows\s2012\"\)\) replace_matched begin If(LOr(_OSI("Darwin"),_OSI("Windows 2012"))) end;
+
+// BEGIN PATCH //
+
+#Maintained by: RehabMan for: Laptop Patches
+#system_RTC.txt
+
+#   RTC fix
+into device name_hid PNP0B00 code_regex (IO\s\((?:\s*[^,]+,\s*(?:\/\/\s.*)?\s*\n)+\s*)(\dx\d+)(,\s*(?:\/\/\s.*)?\s*\n\s*\)) replace_matched begin %10x02%3 end;
+
+// BEGIN PATCH //
+
+#Maintained by: RehabMan for: Laptop Patches
+#system_SMBUS.txt
+
+#   SMBUS fix
+into device label BUS0 parent_adr 0x001F0003 remove_entry;
+into device name_adr 0x001F0003 insert
+begin
+Device (BUS0)\n
+{\n
+    Name (_CID, "smbus")\n
+    Name (_ADR, Zero)\n
+    Device (DVL0)\n
+    {\n
+        Name (_ADR, 0x57)\n
+        Name (_CID, "diagsvault")\n
+        Method (_DSM, 4, NotSerialized)\n
+        {\n
+            If (LEqual (Arg2, Zero)) { Return (Buffer() { 0x03 } ) }\n
+            Return (Package() { "address", 0x57 })\n
+        }\n
+    }\n
+}\n
+end;
+
+// BEGIN PATCH //
+
+#Maintained by: RehabMan for: Laptop Patches
+#usb_prw_0x0d_xhc.txt
+
+# remove _PRW methods to prevent instant wake
+
+# delete any existing XHC1 device
+into device label XHC1 name_adr 0x00140000 remove_entry;
+# delete any existing USB2 device
+into device label USB2 name_adr 0x001D0000 remove_entry;
+
+# if _PRW objects are methods
+into method label _PRW parent_adr 0x001D0000 remove_entry;
+into method label _PRW parent_adr 0x001A0000 remove_entry;
+into method label _PRW parent_adr 0x00140000 remove_entry;
+into method label _PRW parent_adr 0x001B0000 remove_entry;
+# some other LAN cards use 0x00190000
+into method label _PRW parent_adr 0x00190000 remove_entry;
+
+# if _PRW methods are stuffed into a separate scope
+into method label _PRW parent_label _SB.PCI0.EHC1 remove_entry;
+into method label _PRW parent_label _SB.PCI0.EHC2 remove_entry;
+into method label _PRW parent_label _SB.PCI0.XHC remove_entry;
+into method label _PRW parent_label \_SB.PCI0.EHC1 remove_entry;
+into method label _PRW parent_label \_SB.PCI0.EHC2 remove_entry;
+into method label _PRW parent_label \_SB.PCI0.XHC remove_entry;
+
+# if _PRW objects are names
+into device name_adr 0x001D0000 code_regex Name.*_PRW.*\n.*\n.*\n.*\n.*\}\) remove_matched;
+into device name_adr 0x001A0000 code_regex Name.*_PRW.*\n.*\n.*\n.*\n.*\}\) remove_matched;
+into device name_adr 0x00140000 code_regex Name.*_PRW.*\n.*\n.*\n.*\n.*\}\) remove_matched;
+into device name_adr 0x001B0000 code_regex Name.*_PRW.*\n.*\n.*\n.*\n.*\}\) remove_matched;
+into device name_adr 0x00190000 code_regex Name.*_PRW.*\n.*\n.*\n.*\n.*\}\) remove_matched;
+# some _PRW have three entries in the Package
+into device name_adr 0x001D0000 code_regex Name.*_PRW.*\n.*\n.*\n.*\n.*\n.*\}\) remove_matched;
+into device name_adr 0x001A0000 code_regex Name.*_PRW.*\n.*\n.*\n.*\n.*\n.*\}\) remove_matched;
+into device name_adr 0x00140000 code_regex Name.*_PRW.*\n.*\n.*\n.*\n.*\n.*\}\) remove_matched;
+into device name_adr 0x001B0000 code_regex Name.*_PRW.*\n.*\n.*\n.*\n.*\n.*\}\) remove_matched;
+into device name_adr 0x00190000 code_regex Name.*_PRW.*\n.*\n.*\n.*\n.*\n.*\}\) remove_matched;
+
+# seems to work better if _PRW is present, but returns 0 (original was 3) for sleep state
+into device name_adr 0x001D0000 insert begin Name(_PRW, Package() { 0x0D, 0 }) end;
+into device name_adr 0x001A0000 insert begin Name(_PRW, Package() { 0x0D, 0 }) end;
+into device name_adr 0x00140000 insert begin Name(_PRW, Package() { 0x0D, 0 }) end;
+into device name_adr 0x001B0000 insert begin Name(_PRW, Package() { 0x0D, 0 }) end;
+into device name_adr 0x00190000 insert begin Name(_PRW, Package() { 0x0D, 0 }) end;
+
+# USB property injection for 7-series boards (originally HM76)
+
+# Insert Apple USB properties into EHC1
+into method label _DSM parent_adr 0x001D0000 remove_entry;
+into device name_adr 0x001D0000 insert
+begin
+Method (_DSM, 4, NotSerialized)\n
+{\n
+    If (LEqual (Arg2, Zero)) { Return (Buffer() { 0x03 } ) }\n
+    Return (Package()\n
+    {\n
+        "subsystem-id", Buffer() { 0x70, 0x72, 0x00, 0x00 },\n
+        "subsystem-vendor-id", Buffer() { 0x86, 0x80, 0x00, 0x00 },\n
+        "AAPL,current-available", 2100,\n
+        "AAPL,current-extra", 2200,\n
+        "AAPL,current-extra-in-sleep", 1600,\n
+        "AAPL,device-internal", 0x02,\n
+        "AAPL,max-port-current-in-sleep", 2100,\n
+    })\n
+}\n
+end;
+
+# Insert Apple USB properties into EHC2
+into method label _DSM parent_adr 0x001A0000 remove_entry;
+into device name_adr 0x001A0000 insert
+begin
+Method (_DSM, 4, NotSerialized)\n
+{\n
+    If (LEqual (Arg2, Zero)) { Return (Buffer() { 0x03 } ) }\n
+    Return (Package()\n
+    {\n
+        "subsystem-id", Buffer() { 0x70, 0x72, 0x00, 0x00 },\n
+        "subsystem-vendor-id", Buffer() { 0x86, 0x80, 0x00, 0x00 },\n
+        "AAPL,current-available", 2100,\n
+        "AAPL,current-extra", 2200,\n
+        "AAPL,current-extra-in-sleep", 1600,\n
+        "AAPL,device-internal", 0x02,\n
+        "AAPL,max-port-current-in-sleep", 2100,\n
+    })\n
+}\n
+end;
+
+# Insert Apple USB properties into USB 3.0 XHC
+into method label _DSM parent_adr 0x00140000 remove_entry;
+into device name_adr 0x00140000 insert
+begin
+Method (_DSM, 4, NotSerialized)\n
+{\n
+    If (LEqual (Arg2, Zero)) { Return (Buffer() { 0x03 } ) }\n
+    Return (Package()\n
+    {\n
+        "subsystem-id", Buffer() { 0x70, 0x72, 0x00, 0x00 },\n
+        "subsystem-vendor-id", Buffer() { 0x86, 0x80, 0x00, 0x00 },\n
+        "AAPL,current-available", 2100,\n
+        "AAPL,current-extra", 2200,\n
+        "AAPL,current-extra-in-sleep", 1600,\n
+        "AAPL,device-internal", 0x02,\n
+        "AAPL,max-port-current-in-sleep", 2100,\n
+    })\n
+}\n
+end;
+
+
+# special cases... (not in u430 DSDT)
+#into scope label _SB.PCI0.XHC.RHUB.HS05 set_label begin _SB.PCI0.XHC1.RHUB.HS05 end;
+
+// BEGIN PATCH //
+
+into method label _Q14 code_regex () replace_matched begin
+//Fn-F9: Brightness up\n
+Notify(KBD, 0x0206)\n
+Notify(KBD, 0x0286)\n               
+end;
+
+into method label _Q15 code_regex () replace_matched begin
+//Fn-F8: Brightness down\n
+Notify(KBD, 0x0205)\n
+Notify(KBD, 0x0285)\n               
+end;
+
+// BEGIN PATCH //
+
+#Maintained by: RehabMan for: Laptop Patches
+#battery_Lenovo-X230i.txt
+
+# Created by Jarett, 2015-06-15
+# some fixes by Rehabman
+
+# Works for:
+#   Lenovo ThinkPad X230i
+
+# Note: This DSDT requires "Fix Mutex with non-zero SyncLevel"
+
+# Note: disable secondary battery
+#  *** remove this line if you have a second battery installed)
+into method label _STA parent_label BAT1 replace_content begin Return(0) end;
+
+into method label B1B2 remove_entry;
+into definitionblock code_regex . insert
+begin
+Method (B1B2, 2, NotSerialized) { Return(Or(Arg0, ShiftLeft(Arg1, 8))) }\n
+end;
+
+into method label B1B4 remove_entry;
+into definitionblock code_regex . insert
+begin
+Method (B1B4, 4, NotSerialized)\n
+{\n
+    Store(Arg3, Local0)\n
+    Or(Arg2, ShiftLeft(Local0, 8), Local0)\n
+    Or(Arg1, ShiftLeft(Local0, 8), Local0)\n
+    Or(Arg0, ShiftLeft(Local0, 8), Local0)\n
+    Return(Local0)\n
+}\n
+end;
+
+into method label RE1B parent_label EC remove_entry;
+into method label RECB parent_label EC remove_entry;
+into device label EC insert
+begin
+Method (RE1B, 1, NotSerialized)\n
+// Arg0 - offset in bytes from zero-based EC\n
+{\n
+    OperationRegion(ECOR, EmbeddedControl, Arg0, 1)\n
+    Field(ECOR, ByteAcc, NoLock, Preserve) { BYTE, 8 }\n
+    Return(BYTE)\n
+}\n
+Method (RECB, 2, Serialized)\n
+// Arg0 - offset in bytes from zero-based EC\n
+// Arg1 - size of buffer in bits\n
+{\n
+    ShiftRight(Arg1, 3, Arg1)\n
+    Name(TEMP, Buffer(Arg1) { })\n
+    Add(Arg0, Arg1, Arg1)\n
+    Store(0, Local0)\n
+    While (LLess(Arg0, Arg1))\n
+    {\n
+        Store(RE1B(Arg0), Index(TEMP, Local0))\n
+        Increment(Arg0)\n
+        Increment(Local0)\n
+    }\n
+    Return(TEMP)\n
+}\n
+end;
+
+# Change EC register declarations bigger than 8 bit
+into device label EC code_regex HWAK,\s+16, replace_matched begin AK00,8,AK01,8, end;
+into device label EC code_regex SBRC,\s+16, replace_matched begin RC00,8,RC01,8, end;
+into device label EC code_regex SBFC,\s+16, replace_matched begin FC00,8,FC01,8, end;
+into device label EC code_regex SBAC,\s+16, replace_matched begin AC00,8,AC01,8, end;
+into device label EC code_regex SBVO,\s+16, replace_matched begin BV00,8,BV01,8, end;
+into device label EC code_regex SBBM,\s+16, replace_matched begin SB00,8,SB01,8, end;
+into device label EC code_regex SBDC,\s+16, replace_matched begin DC00,8,DC01,8, end;
+into device label EC code_regex SBDV,\s+16, replace_matched begin DV00,8,DV01,8, end;
+into device label EC code_regex SBSN,\s+16 replace_matched begin SN00,8,SN01,8 end;
+into device label EC code_regex SBCH,\s+32 replace_matched begin CH00,8,CH01,8,CH02,8,CH03,8 end;
+into device label EC code_regex (SBMN,)\s+(128) replace_matched begin BMNX,%2,//%1%2 end;
+into device label EC code_regex (SBDN,)\s+(128) replace_matched begin BDNX,%2,//%1%2 end;
+
+#put 8-bit variable together
+into method label _L1D code_regex \(\\_SB\.PCI0\.LPC\.EC\.HWAK, replaceall_matched begin (B1B2(\\_SB.PCI0.LPC.EC.AK00,\\_SB.PCI0.LPC.EC.AK01), end;
+into method label GBST code_regex \(SBRC, replaceall_matched begin (B1B2(RC00,RC01), end;
+into method label GBIF code_regex \(SBFC, replaceall_matched begin (B1B2(FC00,FC01), end;
+into method label GBST code_regex \(SBAC, replaceall_matched begin (B1B2(AC00,AC01), end;
+into method label GBST code_regex \(SBVO, replaceall_matched begin (B1B2(BV00,BV01), end;
+into method label GBIF code_regex \(SBBM, replaceall_matched begin (B1B2(SB00,SB01), end;
+into method label GBIF code_regex \(SBDC, replaceall_matched begin (B1B2(DC00,DC01), end;
+into method label GBIF code_regex \(SBDV\) replaceall_matched begin (B1B2(DV00,DV01)) end;
+into method label GBIF code_regex SBDV, replaceall_matched begin B1B2(DV00,DV01), end;
+into method label GBIF code_regex \(SBSN, replaceall_matched begin (B1B2(SN00,SN01), end;
+into method label GBIF code_regex \(SBCH, replaceall_matched begin (B1B4(CH00,CH01,CH02,CH03), end;
+into method label GBIF code_regex \(SBMN, replaceall_matched begin (RECB(0xA0,128), end;
+into method label GBIF code_regex \(SBDN, replaceall_matched begin (RECB(0xA0,128), end;
+
+// BEGIN PATCH //
+
+# Change method _PTS where Arg0 is 0x05 (shutdown)
+#
+into method label _PTS code_regex (If\s*\(LEqual\s*\(Arg0,\s*0x05\)\)\s*\n\s*\{\s*\n)(?:[^\n\}]+\n)+(\s*\}) replace_matched
+begin
+%1
+            Store (Zero, SLPE)\n
+            Sleep (0x10)\n
+%2
+end;
+into method label \_PTS code_regex (If\s*\(LEqual\s*\(Arg0,\s*0x05\)\)\s*\n\s*\{\s*\n)(?:[^\n\}]+\n)+(\s*\}) replace_matched
+begin
+%1
+            Store (Zero, SLPE)\n
+            Sleep (0x10)\n
+%2
+end;
+into definitionblock code_regex . code_regex_not OperationRegion\s*\(PMRS insert
+begin
+OperationRegion (PMRS, SystemIO, 0x0430, One)\n
+Field (PMRS, ByteAcc, NoLock, Preserve)\n
+{\n
+        ,   4, \n
+    SLPE,   1\n
+}
+end
