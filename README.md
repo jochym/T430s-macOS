@@ -1,1 +1,3 @@
-# T430s-macOS
+# Lenovo T430s macOS
+
+Clover (UEFI), kexts, DSDT patches
